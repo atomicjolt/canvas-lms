@@ -410,7 +410,7 @@ Canvas::Plugin.register 'blackboard_importer', :export_system, {
     :worker => 'CCBlackboardWorker',
     :migration_partial => 'canvas_config',
     :requires_file_upload => true,
-    :provides =>{:canvas_cartridge => CC::Importer::Canvas::Converter},
+    :provides =>{:bb_learn => CC::Importer::Canvas::Converter},
     :valid_contexts => %w{Account Course}
   },
 }

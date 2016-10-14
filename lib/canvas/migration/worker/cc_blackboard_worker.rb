@@ -78,10 +78,11 @@ class Canvas::Migration::Worker::CCBlackboardWorker < Canvas::Migration::Worker:
       begin
         new_migration = canvas.create_content_migration_courses(
           temp_course.id,
-          'canvas_cartridge_importer',
+          'blackboard_exporter',
           {
-            'pre_attachment__name__' => File.basename(import_file.path)
-          }
+            'pre_attachment__name__' => File.basename(import_file.path),
+            'selective_import' => false
+          },
         )
 
         pre = new_migration.pre_attachment
@@ -119,7 +120,10 @@ class Canvas::Migration::Worker::CCBlackboardWorker < Canvas::Migration::Worker:
       begin
         export = canvas.export_content_courses(
           temp_course.id,
-          'common_cartridge'
+          'common_cartridge',
+          {
+            'skip_notifications' => true
+          }
         )
       rescue Footrest::HttpError::Forbidden => e
         raise e
@@ -148,7 +152,7 @@ class Canvas::Migration::Worker::CCBlackboardWorker < Canvas::Migration::Worker:
       end
 
       canvas.conclude_course(temp_course.id, 'delete')
-
+      byebug
       converter = converter_class.new(settings)
       course = converter.export
       export_folder_path = course[:export_folder_path]
