@@ -152,7 +152,7 @@ class Canvas::Migration::Worker::CCBlackboardWorker < Canvas::Migration::Worker:
       end
 
       canvas.conclude_course(temp_course.id, 'delete')
-      byebug
+
       converter = converter_class.new(settings)
       course = converter.export
       export_folder_path = course[:export_folder_path]
