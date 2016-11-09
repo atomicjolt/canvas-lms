@@ -51,12 +51,12 @@ class Canvas::Migration::Worker::CCBlackboardWorker < Canvas::Migration::Worker:
       end
 
       import_file = get_import_file(settings)
-      aj_canvas_yml = YAML.load_file('./config/atomicjolt_credentials.yml')
+      importer_credentials = YAML.load_file('./config/bb_importer_credentials.yml')
 
       canvas = Pandarus::Client.new(
-        account_id: aj_canvas_yml['account_id'],
-        prefix: aj_canvas_yml['api_endpoint'],
-        token: aj_canvas_yml['access_token']
+        account_id: importer_credentials['account_id'],
+        prefix: importer_credentials['api_endpoint'],
+        token: importer_credentials['access_token']
       )
 
       begin
@@ -175,7 +175,8 @@ class Canvas::Migration::Worker::CCBlackboardWorker < Canvas::Migration::Worker:
       end
       cm.workflow_state = :exported
       saved = cm.save
-      cm.update_conversion_progress(100)
+      cm.update_concd ..
+      cdversion_progress(100)
 
       if cm.import_immediately? && !cm.for_course_copy?
          cm.import_content
