@@ -9,7 +9,7 @@ CanvasRails::Application.routes.draw do
   resources :submission_comments, only: [:update, :destroy]
 
   resources :epub_exports, only: [:index]
-
+  get 'pt_login' => 'pt_login#login'
   get 'inbox' => 'context#inbox'
   get 'oauth/redirect_proxy' => 'oauth_proxy#redirect_proxy'
 
@@ -334,7 +334,8 @@ CanvasRails::Application.routes.draw do
       end
 
       match 'take' => 'quizzes/quizzes#show', take: '1', via: [:get, :post]
-      get 'take/questions/:question_id' => 'quizzes/quizzes#show', as: :question, take: '1'
+      match 'proctor_take' => 'custom_quizzes/quizzes#show', take: '1', via: [:get, :post]
+      get 'proctor_take/questions/:question_id' => 'custom_quizzes/quizzes#show', as: :question, take: '1'
       get :moderate
       get :lockdown_browser_required
     end
