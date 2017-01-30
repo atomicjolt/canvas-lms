@@ -22,6 +22,7 @@ class Quizzes::QuizzesController < ApplicationController
   include KalturaHelper
   include ::Filters::Quizzes
   include SubmittablesGradingPeriodProtection
+  include Concerns::ProctorQuizzes
 
   # If Quiz#one_time_results is on, this flag must be set whenever we've
   # rendered the submission results to the student so that the results can be
