@@ -334,6 +334,7 @@ CanvasRails::Application.routes.draw do
       end
 
       match 'take' => 'quizzes/quizzes#show', take: '1', via: [:get, :post]
+      get 'take/questions/:question_id' => 'quizzes/quizzes#show', as: :question, take: '1'
       get :moderate
       get :lockdown_browser_required
     end
