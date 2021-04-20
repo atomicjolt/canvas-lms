@@ -1,5 +1,6 @@
 #
 # Copyright (C) 2014 - present Instructure, Inc.
+# Copyright (c) 2019 Atomic Jolt Inc.
 #
 # This file is part of Canvas.
 #
@@ -16,6 +17,7 @@
 # with this program. If not, see <http://www.gnu.org/licenses/>.
 
 require 'fileutils'
+require 'tempfile'
 
 module AttachmentFu # :nodoc:
   module Backends
@@ -132,9 +134,31 @@ module AttachmentFu # :nodoc:
         def save_to_storage
           if save_attachment?
             # TODO: This overwrites the file if it exists, maybe have an allow_overwrite option?
-            FileUtils.mkdir_p(File.dirname(full_filename))
-            FileUtils.cp(temp_path, full_filename)
-            File.chmod(attachment_options[:chmod] || 0644, full_filename)
+
+            full_name = full_filename
+            dir_name = File.dirname(full_name)
+
+            FileUtils.mkdir_p(dir_name)
+
+            begin
+              # Try to move atomically first.  This works when the source and
+              # destination are in the same filesystem.
+              File.rename(temp_path, full_name)
+            rescue Errno::EXDEV
+              # If the rename failed because it was cross-device, copy to a new
+              # file in the destination directory...
+              base_name = File.basename(full_name)
+              tmp2 = Tempfile.create(base_name + '.', dir_name)
+              FileUtils.cp(temp_path, tmp2)
+              tmp2.fsync
+              tmp2.close
+              # ... /then/ move atomically, to avoid windows of time where other
+              # processes/threads might see partial content under the final
+              # name.
+              File.rename(tmp2, full_name)
+            end
+
+            File.chmod(0644, full_name)
           end
           @old_filename = nil
           true

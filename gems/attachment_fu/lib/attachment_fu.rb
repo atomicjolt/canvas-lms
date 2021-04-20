@@ -1,5 +1,6 @@
 #
 # Copyright (C) 2014 - present Instructure, Inc.
+# Copyright (c) 2019 Atomic Jolt Inc.
 #
 # This file is part of Canvas.
 #
@@ -324,9 +325,12 @@ module AttachmentFu # :nodoc:
         if self.root_attachment_id && self.new_record?
           return false
         end
-        self.filename && File.file?(temp_path.to_s)
+        # `temp_path` will create a new tempfile if one doesn't already exist,
+        # so check whether we already have one first.
+        self.filename && @temp_paths && File.file?(temp_path.to_s)
       else
-        File.file?(temp_path.to_s)
+        # As above.
+        @temp_paths && File.file?(temp_path.to_s)
       end
     end
 
@@ -370,25 +374,33 @@ module AttachmentFu # :nodoc:
           self.filename = filename.sub(/\A\d+_\d+__/, "")
           self.filename = "#{Time.now.to_i}_#{rand(999)}__#{self.filename}" if self.filename
         end
-        unless attachment_options[:skip_sis]
-          read_bytes = false
-          digest = self.class.digest_class.new
-          begin
-            io = file_data
-            if file_from_path
-              io = File.open(self.temp_path, 'rb')
-            end
-            io.rewind
-            io.each_line do |line|
-              digest.update(line)
-              read_bytes = true
-            end
-          rescue => e
-          ensure
-            io.close if file_from_path
-          end
+        # If Rack has been monkey-patched to calculate the digest during reception,
+        # use that; otherwise, calculate it ourselves.
+        digest_field = attachment_options[:use_sha512_digests] ? :sha512 : :md5
+        if file_data.respond_to?(:tempfile) && file_data.tempfile.respond_to?(digest_field)
+          self.md5 = file_data.tempfile.public_send(digest_field)
         end
-        self.md5 = read_bytes ? digest.hexdigest : nil
+        if self.md5.blank?
+          unless attachment_options[:skip_sis]
+            read_bytes = false
+            digest = self.class.digest_class.new
+            begin
+              io = file_data
+              if file_from_path
+                io = File.open(self.temp_path, 'rb')
+              end
+              io.rewind
+              io.each_line do |line|
+                digest.update(line)
+                read_bytes = true
+              end
+            rescue => e
+            ensure
+              io.close if file_from_path
+            end
+          end
+          self.md5 = read_bytes ? digest.hexdigest : nil
+        end
         if existing_attachment = find_existing_attachment_for_md5
           self.temp_path = nil if respond_to?(:temp_path=)
           self.temp_data = nil if respond_to?(:temp_data=)
