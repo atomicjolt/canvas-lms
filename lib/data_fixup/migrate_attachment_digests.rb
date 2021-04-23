@@ -27,9 +27,11 @@ module DataFixup::MigrateAttachmentDigests
     raise 'Cannot migrate attachment digests when configured for s3 storage' if Attachment.s3_storage?
 
     Attachment.find_ids_in_ranges do |min_id, max_id|
-      delay_if_production(n_strand: ["DataFixup:MigrateAttachmentDigests", Shard.current.database_server.id],
-          priority: Delayed::LOWER_PRIORITY).
-        run_for_attachment_range(min_id, max_id)
+      send_later_if_production_enqueue_args(
+        :run_for_attachment_range,
+        { priority: Delayed::LOWER_PRIORITY,
+          n_strand: ["DataFixup:MigrateAttachmentDigests", Shard.current.database_server.id] },
+        min_id, max_id)
     end
   end
 
@@ -69,8 +71,10 @@ module DataFixup::MigrateAttachmentDigests
   end
 
   def self.requeue(*args)
-    delay(n_strand: ["DataFixup:MigrateAttachmentDigests", Shard.current.database_server.id],
-        priority: Delayed::LOWER_PRIORITY).
-      run_for_attachment_range(*args)
+    send_later_enqueue_args(
+      :run_for_attachment_range,
+      { priority: Delayed::LOWER_PRIORITY,
+        n_strand: ["DataFixup:MigrateAttachmentDigests", Shard.current.database_server.id] },
+      *args)
   end
 end
