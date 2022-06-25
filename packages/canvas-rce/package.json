@@ -150,7 +150,7 @@
     "jest-canvas-mock": "^2",
     "jest-environment-jsdom-fourteen": "^0.1.0",
     "jest-junit": "^7",
-    "jsdom": "^13.0.0",
+    "jsdom": "^16.5.0",
     "jsdom-global": "^3.0.2",
     "jsdomify": "^3",
     "mocha": "^6",
