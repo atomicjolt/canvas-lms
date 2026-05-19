@@ -42,7 +42,6 @@ class Lti::ToolConfigurationsApiController < ApplicationController
   include Api::V1::ExternalTools
 
   before_action :require_context, only: [:create, :show]
-  before_action :require_user
   before_action :require_settings_or_url, only: :create
   before_action :require_manage_developer_keys, except: :show
   before_action :require_modify_site_admin_developer_keys, except: :show
@@ -90,7 +89,6 @@ class Lti::ToolConfigurationsApiController < ApplicationController
   #
   # @returns ToolConfiguration
   def create
-    # TEMPORARY: This is a temporary change. We'll revert this once we disable the old developer keys page.
     # Instead of creating an overlay with disabled_placements, we directly modify the placements
     # to set enabled: false for disabled placements.
     configuration_params = {
@@ -156,7 +154,6 @@ class Lti::ToolConfigurationsApiController < ApplicationController
   #
   # @returns ToolConfiguration
   def update
-    # TEMPORARY: This is a temporary change. We'll revert this once we disable the old developer keys page.
     # Instead of creating an overlay with disabled_placements, we directly modify the placements
     # to set enabled: false for disabled placements.
     settings = tool_configuration_params[:settings]&.to_unsafe_hash&.deep_merge(manual_custom_fields)
@@ -243,7 +240,7 @@ class Lti::ToolConfigurationsApiController < ApplicationController
   end
 
   def require_tool_configuration
-    return if developer_key.tool_configuration.present?
+    return if developer_key.tool_configuration&.active?
 
     head :not_found
   end

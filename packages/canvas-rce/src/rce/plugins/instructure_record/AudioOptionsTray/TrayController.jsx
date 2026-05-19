@@ -20,6 +20,8 @@ import React from 'react'
 import ReactDOM from 'react-dom'
 
 import bridge from '../../../../bridge'
+import {showFlashAlert} from '../../../../common/FlashAlert'
+import formatMessage from '../../../../format-message'
 import RCEGlobals from '../../../RCEGlobals'
 import {asAudioElement} from '../../shared/ContentSelection'
 import {findMediaPlayerIframe} from '../../shared/iframeUtils'
@@ -137,7 +139,26 @@ export default class TrayController {
     return elem.parentNode.removeChild(elem)
   }
 
+  _resizeContainer({height, width}) {
+    const styles = {
+      height: `${height}px`,
+      width: `${width}px`,
+    }
+
+    this._editor.dom.setStyles(this._audioContainer.parentElement, styles)
+    this._editor.dom.setStyles(this._audioContainer, styles)
+
+    // tell tinymce so the context toolbar resets
+    this._editor.fire('ObjectResized', {
+      target: this._audioContainer,
+      width: width,
+      height: height,
+    })
+  }
+
   _applyAudioOptions(audioOptions) {
+    this._resizeContainer({width: audioOptions.appliedWidth, height: audioOptions.appliedHeight})
+
     const hasAttachmentId = audioOptions.attachment_id
 
     if (
@@ -155,6 +176,7 @@ export default class TrayController {
       attachment_id: audioOptions.attachment_id,
       subtitles: audioOptions.subtitles,
       skipCaptionUpdate: isCaptionImprovements,
+      viewerRestrictions: audioOptions.viewerRestrictions,
     }
 
     return audioOptions
@@ -206,6 +228,9 @@ export default class TrayController {
         onSave={options => {
           this._applyAudioOptions(options)
           this._dismissTray()
+          setTimeout(() => {
+            showFlashAlert({message: formatMessage('Media options saved.'), type: 'success'})
+          }, 0)
         }}
         onDismiss={() => this._dismissTray()}
         onCaptionsModified={() => {

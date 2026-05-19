@@ -27,23 +27,18 @@ describe Lti::UpdateRegistrationService do
       registration_params:,
       configuration_params:,
       overlay_params:,
-      binding_params:,
       comment:
     )
   end
 
   let(:account) { account_model }
-  let(:registration) { developer_key.lti_registration }
-  let(:developer_key) do
-    lti_developer_key_model(account:).tap do |dk|
-      lti_tool_configuration_model(developer_key: dk, lti_registration: dk.lti_registration)
-    end
-  end
+  let(:registration) { lti_registration_with_tool(account:) }
+  let(:developer_key) { registration.developer_key }
   let(:updated_by) { user_model }
   let(:registration_params) { {} }
   let(:configuration_params) { {} }
   let(:overlay_params) { {} }
-  let(:binding_params) { {} }
+  let(:workflow_state) { nil }
   let(:comment) { nil }
 
   context "with valid registration_params" do
@@ -52,6 +47,7 @@ describe Lti::UpdateRegistrationService do
         name: "new name",
         admin_nickname: "new nickname",
         vendor: "new vendor",
+        workflow_state:
       }
     end
 
@@ -69,6 +65,7 @@ describe Lti::UpdateRegistrationService do
     end
 
     it "tracks the changes" do
+      registration # create first
       expect { subject }.to change(Lti::RegistrationHistoryEntry, :count).by(1)
 
       entry = Lti::RegistrationHistoryEntry.last
@@ -81,6 +78,62 @@ describe Lti::UpdateRegistrationService do
                         ])
       expect(entry.diff["developer_key"])
         .to match_array([["~", ["name"], developer_key.name, registration_params[:name]]])
+    end
+  end
+
+  it "does not change registrationworkflow_state" do
+    expect { subject }.not_to change { registration.reload.workflow_state }
+  end
+
+  it "does not change binding workflow_state" do
+    expect { subject }.not_to change { Lti::RegistrationAccountBinding.find_by(registration:, account:).workflow_state }
+  end
+
+  context "when registration is inactive and workflow_state is not provided" do
+    let(:registration_params) { { name: "new name" } }
+
+    before { registration.update!(workflow_state: "inactive") }
+
+    it "does not change registration workflow_state to active" do
+      expect { subject }.not_to change { registration.reload.workflow_state }
+    end
+
+    it "does not change binding workflow_state" do
+      expect { subject }.not_to change { Lti::RegistrationAccountBinding.find_by(registration:, account:).workflow_state }
+    end
+  end
+
+  context "with workflow_state in registration_params" do
+    context "when workflow_state is inactive" do
+      let(:registration_params) { { workflow_state: "inactive" } }
+
+      it "sets the registration workflow_state to inactive" do
+        expect { subject }.to change { registration.reload.workflow_state }.to("inactive")
+      end
+
+      it "updates the account binding" do
+        subject
+        account_binding = Lti::RegistrationAccountBinding.find_by(registration:, account:)
+        expect(account_binding.workflow_state).to eq("off")
+        expect(account_binding.updated_by).to eq(updated_by)
+      end
+    end
+
+    context "when workflow_state is active" do
+      let(:registration_params) { { workflow_state: "active" } }
+
+      before { registration.update!(workflow_state: "inactive") }
+
+      it "sets the registration workflow_state to active" do
+        expect { subject }.to change { registration.reload.workflow_state }.to("active")
+      end
+
+      it "updates the account binding" do
+        subject
+        account_binding = Lti::RegistrationAccountBinding.find_by(registration:, account:)
+        expect(account_binding.workflow_state).to eq("on")
+        expect(account_binding.updated_by).to eq(updated_by)
+      end
     end
   end
 
@@ -277,26 +330,6 @@ describe Lti::UpdateRegistrationService do
     end
   end
 
-  context "with invalid binding_params" do
-    let(:binding_params) { { uh: :oh } }
-
-    it "does not error" do
-      expect { subject }.not_to raise_error
-    end
-  end
-
-  context "with valid binding_params" do
-    let(:binding_params) { { workflow_state: "on" } }
-
-    it "updates the account binding" do
-      subject
-      account_binding = Lti::RegistrationAccountBinding.find_by(registration:, account:)
-      expect(account_binding.workflow_state).to eq("on")
-      expect(account_binding.updated_by).to eq(updated_by)
-      expect(account_binding.created_by).to eq(updated_by)
-    end
-  end
-
   context "scopes" do
     let(:scopes) { ["https://purl.imsglobal.org/spec/lti-ags/scope/lineitem"] }
 
@@ -359,7 +392,6 @@ describe Lti::UpdateRegistrationService do
     end
   end
 
-  # TEMPORARY: This test verifies temporary behavior. Remove this when we revert the temporary changes.
   context "with manual registration and overlay" do
     before do
       # Set up the base configuration on the manual configuration
@@ -450,14 +482,14 @@ describe Lti::UpdateRegistrationService do
     end
     let(:registration) { dynamic_registration }
 
-    before do
-      dynamic_developer_key # Ensure developer key is created
-    end
-
     let(:overlay_params) do
       {
         title: "Overlaid Title for Dynamic"
       }
+    end
+
+    before do
+      dynamic_developer_key # Ensure developer key is created
     end
 
     it "creates an overlay for dynamic registrations" do
@@ -471,6 +503,96 @@ describe Lti::UpdateRegistrationService do
       original_config = ims_registration.internal_lti_configuration
       subject
       expect(ims_registration.reload.internal_lti_configuration).to eq(original_config)
+    end
+  end
+
+  context "with local template registration (manual_configuration_id + template_registration_id) and overlay" do
+    specs_require_sharding
+
+    let(:sharded_account) { @shard1.activate { account_model } }
+    let(:sharded_user) do
+      @shard1.activate do
+        account_admin_user(account: sharded_account)
+      end
+    end
+    let(:site_admin_user) { user_model }
+
+    let(:template_registration) do
+      # Template must be created on the default shard (Site Admin)
+      Shard.default.activate do
+        lti_registration_with_tool(
+          account: Account.site_admin,
+          created_by: site_admin_user,
+          configuration_params: {
+            title: "Template Title",
+            description: "Template Description",
+            scopes: [
+              "https://purl.imsglobal.org/spec/lti-ags/scope/lineitem",
+              "https://purl.imsglobal.org/spec/lti-ags/scope/score"
+            ],
+            placements: [
+              { placement: "course_navigation", text: "Template Course Nav", enabled: true }
+            ]
+          }
+        )
+      end
+    end
+
+    let(:local_registration) do
+      @shard1.activate do
+        Lti::InstallTemplateRegistrationService.call(
+          account: sharded_account,
+          user: sharded_user,
+          template: template_registration
+        )[:local_copy]
+      end
+    end
+
+    let(:registration) { local_registration }
+    let(:account) { sharded_account }
+    let(:updated_by) { sharded_user }
+
+    let(:overlay_params) do
+      {
+        title: "Overlaid Title for Local Template",
+        description: "Overlaid Description",
+        disabled_placements: ["course_navigation"]
+      }
+    end
+
+    before do
+      local_registration
+    end
+
+    it "updates the existing overlay instead of merging into configuration" do
+      @shard1.activate do
+        expect { subject }.not_to change { Lti::Overlay.count }
+
+        overlay = Lti::Overlay.find_by(registration:, account:)
+        expect(overlay.data).to eq(
+          "title" => "Overlaid Title for Local Template",
+          "description" => "Overlaid Description",
+          "disabled_placements" => ["course_navigation"]
+        )
+      end
+    end
+
+    it "does not modify the manual configuration" do
+      @shard1.activate do
+        original_config = registration.manual_configuration.internal_lti_configuration
+        subject
+        expect(registration.manual_configuration.reload.internal_lti_configuration).to eq(original_config)
+      end
+    end
+
+    it "tracks the overlay update in history" do
+      @shard1.activate do
+        # InstallTemplateRegistrationService creates history entries, so we expect additional ones
+        expect { subject }.to change(Lti::RegistrationHistoryEntry, :count).by(1)
+
+        diff = Lti::RegistrationHistoryEntry.last.diff
+        expect(diff["overlay"]).to be_present
+      end
     end
   end
 end

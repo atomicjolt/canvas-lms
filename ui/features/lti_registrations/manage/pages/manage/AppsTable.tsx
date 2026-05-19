@@ -18,6 +18,7 @@
 
 import * as tz from '@instructure/moment-utils'
 import {useScope as createI18nScope} from '@canvas/i18n'
+import {getActiveCanvasTheme} from '@canvas/react'
 import {Alert} from '@instructure/ui-alerts'
 import {IconButton, Button} from '@instructure/ui-buttons'
 import {Flex} from '@instructure/ui-flex'
@@ -42,17 +43,17 @@ import {
 import {isForcedOn, type LtiRegistration} from '../../model/LtiRegistration'
 import {useManageSearchParams, type ManageSearchParams} from './ManageSearchParams'
 import {colors} from '@instructure/canvas-theme'
-import {showFlashAlert} from '@canvas/alerts/react/FlashAlert'
+import {showFlashAlert} from '@instructure/platform-alerts'
 import {Tooltip} from '@instructure/ui-tooltip'
 import {Pagination} from '@instructure/ui-pagination'
 import {
   openEditDynamicRegistrationWizard,
   openEditManualRegistrationWizard,
 } from '../../registration_wizard/RegistrationWizardModalState'
-import {alert} from '@canvas/instui-bindings/react/Alert'
+import {alert} from '@instructure/platform-instui-bindings'
 import {ToolIconOrDefault} from '@canvas/lti-apps/components/common/ToolIconOrDefault'
 import type {AccountId} from '../../model/AccountId'
-import {confirmDanger} from '@canvas/instui-bindings/react/Confirm'
+import {confirmDanger} from '@instructure/platform-instui-bindings'
 import {useRegistrationUpdateWizardModalState} from '../../registration_update_wizard/RegistrationUpdateWizardModalState'
 
 type CallbackWithRegistration = (registration: LtiRegistration) => void
@@ -304,6 +305,8 @@ const Columns: ReadonlyArray<Column> = [
                     message: I18n.t('This app is locked on by Instructure, and cannot be deleted.'),
                     title: I18n.t('Delete App'),
                     okButtonLabel: I18n.t('Close'),
+                    closeButtonLabel: I18n.t('Close'),
+                    theme: getActiveCanvasTheme(),
                   })
                 }}
               >
@@ -425,7 +428,7 @@ const CondensedColumnsWithStatus: ReadonlyArray<Column> = [
             renderIcon={() => <IconRefreshLine />}
             data-pendo="lti-registrations-update-available-button"
             onClick={() => {
-              useRegistrationUpdateWizardModalState.getState().open(r, pendingUpdate)
+              useRegistrationUpdateWizardModalState.getState().open(r)
             }}
           >
             {I18n.t('Update Available')}
@@ -612,10 +615,13 @@ const confirmDeletion = (registration: LtiRegistration): Promise<boolean> =>
   confirmDanger({
     title: I18n.t('Delete App'),
     confirmButtonLabel: I18n.t('Delete'),
+    cancelButtonLabel: I18n.t('Cancel'),
+    closeButtonLabel: I18n.t('Close'),
     heading: I18n.t('You are about to delete “%{appName}”.', {appName: registration.name}),
     message: I18n.t(
       'You are removing the app from the entire account. It will be removed from its placements and any resource links to it will stop working. To reestablish placements and links, you will need to reinstall the app.',
     ),
+    theme: getActiveCanvasTheme(),
   })
 
 export type AppsTableInnerProps = {

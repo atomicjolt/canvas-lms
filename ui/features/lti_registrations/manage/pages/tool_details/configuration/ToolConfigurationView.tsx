@@ -34,8 +34,8 @@ import {DefaultLtiPrivacyLevel} from '../../../model/LtiPrivacyLevel'
 import {isLtiPlacementWithIcon} from '../../../model/LtiPlacement'
 import {filterPlacementObjectsByFeatureFlags} from '@canvas/lti/model/LtiPlacementFilter'
 import {ToolConfigurationFooter} from './ToolConfigurationFooter'
-import {showFlashAlert} from '@canvas/alerts/react/FlashAlert'
-import {showConfirmationDialog} from '@canvas/feature-flags/react/ConfirmationDialog'
+import {showFlashAlert} from '@instructure/platform-alerts'
+import {showConfirmationDialog} from '@canvas/dialogs/react/ConfirmationDialog'
 import {
   useResetLtiRegistration,
   fetchLtiRegistrationWithLegacyConfig,
@@ -48,6 +48,8 @@ import {launchTypeSpecificSettingsLabels} from '../../../registration_wizard_for
 import {Section, SubSection} from '../../../components/Section'
 import {LaunchSettingsReadOnlyView} from '../../../components/LaunchSettingsReadOnlyView'
 import {IconUrlsReadOnlyView} from '../../../components/IconUrlsReadOnlyView'
+import {CustomVariablesList} from '../../../components/CustomVariablesList'
+import {canEdit, canEditAsJson, canRestoreDefault} from '../../../model/LtiRegistration'
 
 const I18n = createI18nScope('lti_registrations')
 
@@ -91,7 +93,6 @@ export const ToolConfigurationView = () => {
   const mutation = useResetLtiRegistration()
   const navigate = useNavigate()
 
-  const customFields = Object.entries(registration.overlaid_configuration.custom_fields || {})
   const redirectUris = registration.overlaid_configuration.redirect_uris || []
   const enabledPlacements = filterPlacementObjectsByFeatureFlags(
     registration.overlaid_configuration.placements.filter(p => {
@@ -108,12 +109,12 @@ export const ToolConfigurationView = () => {
   ).filter(setting => setting.enabled)
 
   const [tooltipShowing, setTooltipShowing] = React.useState(false)
+  const [editTooltipShowing, setEditTooltipShowing] = React.useState(false)
 
-  // TEMPORARY: This is a temporary change. We'll revert this once we disable the old developer keys page.
-  // Manual registrations no longer use overlays (they edit the base config directly),
-  // so "Restore Default" doesn't make sense for them. Only show it for dynamic registrations.
-  const isManualRegistration = registration.manual_configuration_id !== null
-  const canRestoreDefault = !registration.inherited && !isManualRegistration
+  // Local Manual registrations no longer use overlays (they edit the base config directly),
+  // so "Restore Default" doesn't make sense for them. Only show it for dynamic registrations and inherited keys.
+  const isLocalManualRegistration =
+    registration.manual_configuration_id !== null && registration.template_registration_id === null
 
   const handleRestoreDefault = React.useCallback(
     async (e: React.KeyboardEvent<ViewProps> | React.MouseEvent<ViewProps, MouseEvent>) => {
@@ -201,9 +202,14 @@ export const ToolConfigurationView = () => {
       </Section>
 
       <Section title={I18n.t('Data Sharing')}>
-        {i18nLtiPrivacyLevel(
-          registration.overlaid_configuration.privacy_level || DefaultLtiPrivacyLevel,
-        )}
+        <SubSection title={I18n.t('Privacy Level')}>
+          <Text>
+            {i18nLtiPrivacyLevel(
+              registration.overlaid_configuration.privacy_level || DefaultLtiPrivacyLevel,
+            )}
+          </Text>
+        </SubSection>
+        <CustomVariablesList internalConfiguration={registration.overlaid_configuration} />
       </Section>
 
       <Section title={I18n.t('Placements')}>
@@ -288,8 +294,7 @@ export const ToolConfigurationView = () => {
         <Flex direction="row" justifyItems="space-between" padding="0 small">
           <Flex.Item>
             <Flex gap="small">
-              {/* TEMPORARY: Hide Restore Default button for manual registrations */}
-              {!isManualRegistration ? (
+              {!isLocalManualRegistration || registration.inherited ? (
                 <Flex.Item>
                   <Tooltip
                     renderTip={I18n.t(
@@ -298,7 +303,7 @@ export const ToolConfigurationView = () => {
                     isShowingContent={tooltipShowing}
                     onShowContent={() => {
                       // The tooltip should only be shown if they *can't* click the restore default button
-                      setTooltipShowing(!canRestoreDefault)
+                      setTooltipShowing(!canRestoreDefault(registration))
                     }}
                     onHideContent={() => {
                       setTooltipShowing(false)
@@ -307,7 +312,7 @@ export const ToolConfigurationView = () => {
                     <Button
                       data-pendo="lti-registrations-restore-default"
                       color="primary-inverse"
-                      interaction={canRestoreDefault ? 'enabled' : 'disabled'}
+                      interaction={canRestoreDefault(registration) ? 'enabled' : 'disabled'}
                       renderIcon={<IconRefreshLine />}
                       margin="0"
                       onClick={handleRestoreDefault}
@@ -331,16 +336,51 @@ export const ToolConfigurationView = () => {
               ) : null}
             </Flex>
           </Flex.Item>
+
           <Flex.Item>
-            <Button
-              data-pendo="lti-registrations-edit-config"
-              color="primary"
-              onClick={e => {
-                navigate(`/manage/${registration.id}/configuration/edit`)
-              }}
-            >
-              {I18n.t('Edit')}
-            </Button>
+            <Flex gap="small">
+              <Flex.Item>
+                {window.ENV.LTI_EDIT_JSON && canEditAsJson(registration) && (
+                  <Flex.Item>
+                    <Button
+                      data-pendo="lti-registrations-edit-json"
+                      color="secondary"
+                      onClick={_ => {
+                        navigate(`/manage/${registration.id}/configuration/edit-json`)
+                      }}
+                    >
+                      {I18n.t('Edit as JSON')}
+                    </Button>
+                  </Flex.Item>
+                )}
+              </Flex.Item>
+              <Flex.Item>
+                <Tooltip
+                  renderTip={I18n.t(
+                    "This account does not own this app and therefore can't edit its configuration.",
+                  )}
+                  isShowingContent={editTooltipShowing}
+                  onShowContent={() => {
+                    // The tooltip should only be shown if they *can't* click the edit button
+                    setEditTooltipShowing(!canEdit(registration))
+                  }}
+                  onHideContent={() => {
+                    setEditTooltipShowing(false)
+                  }}
+                >
+                  <Button
+                    data-pendo="lti-registrations-edit-config"
+                    color="primary"
+                    interaction={canEdit(registration) ? 'enabled' : 'disabled'}
+                    onClick={_ => {
+                      navigate(`/manage/${registration.id}/configuration/edit`)
+                    }}
+                  >
+                    {I18n.t('Edit')}
+                  </Button>
+                </Tooltip>
+              </Flex.Item>
+            </Flex>
           </Flex.Item>
         </Flex>
       </ToolConfigurationFooter>

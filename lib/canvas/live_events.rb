@@ -138,6 +138,14 @@ module Canvas::LiveEvents
     post_event_stringified("discussion_entry_created", get_discussion_entry_data(entry))
   end
 
+  def self.discussion_entry_updated(entry)
+    post_event_stringified("discussion_entry_updated", get_discussion_entry_data(entry))
+  end
+
+  def self.discussion_entry_deleted(entry)
+    post_event_stringified("discussion_entry_deleted", get_discussion_entry_data(entry))
+  end
+
   def self.discussion_entry_submitted(entry, assignment_id, submission_id)
     payload = get_discussion_entry_data(entry)
     payload[:assignment_id] = assignment_id unless assignment_id.nil?
@@ -337,6 +345,34 @@ module Canvas::LiveEvents
     post_event_stringified("assignment_updated", get_assignment_data(assignment))
   end
 
+  def self.get_quiz_data(quiz)
+    {
+      assignment_group_id: quiz.global_assignment_group_id,
+      context_id: quiz.global_context_id,
+      context_type: "Course",
+      context_uuid: quiz.context.uuid,
+      description: LiveEvents.truncate(quiz.description),
+      due_at: quiz.due_at,
+      lock_at: quiz.lock_at,
+      points_possible: quiz.points_possible,
+      quiz_id: quiz.global_id,
+      quiz_type: quiz.quiz_type,
+      submission_types: "online_quiz",
+      title: LiveEvents.truncate(quiz.title),
+      unlock_at: quiz.unlock_at,
+      updated_at: quiz.updated_at,
+      workflow_state: quiz.workflow_state
+    }
+  end
+
+  def self.quiz_created(quiz)
+    post_event_stringified("quiz_created", get_quiz_data(quiz))
+  end
+
+  def self.quiz_updated(quiz)
+    post_event_stringified("quiz_updated", get_quiz_data(quiz))
+  end
+
   def self.assignment_group_created(assignment_group)
     post_event_stringified("assignment_group_created", get_assignment_group_data(assignment_group))
   end
@@ -457,6 +493,7 @@ module Canvas::LiveEvents
       folder_id: attachment.global_folder_id,
       unlock_at: attachment.unlock_at,
       lock_at: attachment.lock_at,
+      locked: attachment.locked,
       updated_at: attachment.updated_at
     }
   end
@@ -609,7 +646,8 @@ module Canvas::LiveEvents
     payload = {
       wiki_page_id: page.global_id,
       title: LiveEvents.truncate(page.title),
-      body: LiveEvents.truncate(page.body)
+      body: LiveEvents.truncate(page.body),
+      workflow_state: page.workflow_state
     }
 
     if old_title
@@ -628,6 +666,30 @@ module Canvas::LiveEvents
                              wiki_page_id: page.global_id,
                              title: LiveEvents.truncate(page.title)
                            })
+  end
+
+  def self.get_lti_resource_link_data(resource_link)
+    {
+      resource_link_id: resource_link.global_id,
+      resource_link_uuid: resource_link.resource_link_uuid,
+      lookup_uuid: resource_link.lookup_uuid,
+      context_id: resource_link.global_context_id,
+      context_type: resource_link.context_type,
+      context_external_tool_id: resource_link.original_context_external_tool&.global_id,
+      url: resource_link.url,
+      title: resource_link.title,
+      workflow_state: resource_link.workflow_state
+    }
+  end
+
+  def self.lti_resource_link_created(resource_link)
+    post_event_stringified("lti_resource_link_created",
+                           get_lti_resource_link_data(resource_link))
+  end
+
+  def self.lti_resource_link_updated(resource_link)
+    post_event_stringified("lti_resource_link_updated",
+                           get_lti_resource_link_data(resource_link))
   end
 
   def self.attachment_created(attachment)
@@ -845,11 +907,18 @@ module Canvas::LiveEvents
   end
 
   def self.course_completed(context_module_progression)
-    post_event_stringified("course_completed",
-                           get_course_completed_data(
-                             context_module_progression.context_module.course,
-                             context_module_progression.user
-                           ))
+    course = context_module_progression.context_module.course
+    user = context_module_progression.user
+
+    post_event_stringified("course_completed", get_course_completed_data(course, user))
+
+    Canvas::KafkaEvents.post_event(
+      Canvas::KafkaEvents::Events::COURSE_COMPLETED,
+      root_account: course.root_account,
+      user:,
+      payload: { course_id: course.global_id.to_s },
+      occurred_at: context_module_progression.completed_at
+    )
   end
 
   def self.course_progress(context_module_progression)

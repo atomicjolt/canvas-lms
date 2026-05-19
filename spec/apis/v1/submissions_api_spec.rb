@@ -1351,7 +1351,7 @@ describe "Submissions API", type: :request do
     Quizzes::SubmissionGrader.new(qs).grade_submission
     qs.reload
     qs.attempt = 2
-    qs.with_versioning(true, &:save)
+    qs.with_versioning(&:save)
 
     json = api_call(:get,
                     "/api/v1/courses/#{@course.id}/assignments/#{quiz.assignment.id}/submissions.json",
@@ -1529,7 +1529,7 @@ describe "Submissions API", type: :request do
     course_with_teacher(active_all: true)
     @course.enroll_student(student1).accept!
     a1 = @course.assignments.create!(title: "assignment1", grading_type: "letter_grade", points_possible: 15)
-    should_translate_user_content(@course, false) do |content|
+    should_translate_user_content(@course, include_verifiers: false) do |content|
       submit_homework(a1, student1, body: content)
       json = api_call(:get,
                       "/api/v1/courses/#{@course.id}/assignments/#{a1.id}/submissions/#{student1.id}.json",
@@ -2102,6 +2102,28 @@ describe "Submissions API", type: :request do
     expect(json.first["integration_id"]).to eq "xyz"
   end
 
+  # This test ensures that the current_user is properly passed through to the SisPseudonym extension, which is
+  # necessary for correct filtering of instructure identity pseudonyms for the multiple_root_accounts plugin.
+  it "passes current_user to SisPseudonym.for when fetching student submissions" do
+    student = user_with_pseudonym(active_all: true)
+    course_with_teacher(active_all: true)
+    @course.enroll_student(student).accept!
+    allow(SisPseudonym).to receive(:for).and_call_original
+    expect(SisPseudonym).to receive(:for)
+      .with(student, anything, hash_including(current_user: @teacher))
+      .and_call_original
+    api_call_as_user(
+      @teacher,
+      :get,
+      "/api/v1/courses/#{@course.id}/students/submissions.json",
+      { controller: "submissions_api",
+        action: "for_students",
+        format: "json",
+        course_id: @course.to_param },
+      { student_ids: [student.to_param], grouped: "true" }
+    )
+  end
+
   context "with plagiarism data" do
     before :once do
       @student = user_factory(active_all: true)
@@ -2498,7 +2520,7 @@ describe "Submissions API", type: :request do
                           include: ["provisional_grades"]
                         })
 
-        expect(json.first["provisional_grades"]).to_not be_empty
+        expect(json.first["provisional_grades"]).not_to be_empty
         speedgrader_url = URI.parse(json.first["provisional_grades"].first["speedgrader_url"])
         expect(speedgrader_url).to match_path("/courses/#{@course.id}/gradebook/speed_grader")
           .and_query({ assignment_id: @assignment.id, student_id: @student.id })
@@ -7447,7 +7469,7 @@ describe "Submissions API", type: :request do
                grade_data)
       run_jobs
 
-      expect(@a1.submission_for_student(@student1)).to_not be_excused
+      expect(@a1.submission_for_student(@student1)).not_to be_excused
     end
 
     it "posts do not set grader_id for unchanged scores" do
